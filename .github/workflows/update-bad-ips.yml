@@ -35,10 +35,15 @@ jobs:
 
         cd ..
 
-    - name: Commit and push changes
+   - name: Commit and push changes
       run: |
         git config user.name "GitHub Action"
         git config user.email "action@github.com"
         git add bad_ips.csv
-        git commit -m "Daily update of bad IPs"
-        git push
+
+        if ! git diff --cached --quiet; then
+          git commit -m "Daily update of bad IPs"
+          git push
+        else
+          echo "No changes in bad_ips.csv — skipping commit."
+        fi
