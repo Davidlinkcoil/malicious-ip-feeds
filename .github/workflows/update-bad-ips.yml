@@ -2,48 +2,43 @@ name: Update Bad IP List
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Every day at 03:00 UTC
-  workflow_dispatch:     # Manual trigger option
+    - cron: '0 3 * * *'  # Run daily at 03:00 UTC
+  workflow_dispatch:      # Optional: allow manual trigger
 
 jobs:
   update:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Pull IPs from multiple sources and update bad_ips.csv
-      run: |
-        echo "Fetching IPs..."
+      - name: Pull IPs from multiple sources and update bad_ips.csv
+        run: |
+          set -euxo pipefail
 
-        # Create temp files
-        mkdir -p feeds
-        cd feeds
+          # Create temp folder
+          mkdir -p feeds
+          cd feeds
 
-        # Fetch from AbuseIPDB (free sample feed, replace with real API if needed)
-        curl -s https://feodotracker.abuse.ch/downloads/ipblocklist.csv | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' > feodo.txt
+          # Fetch threat intel feeds
+          curl -s https://feodotracker.abuse.ch/downloads/ipblocklist.csv | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' > feodo.txt || echo "Feodo feed failed"
+          curl -s https://www.spamhaus.org/drop/drop.txt | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' > spamhaus.txt || echo "Spamhaus feed failed"
+          curl -s https://rules.emergingthreats.net/blockrules/compromised-ips.txt > et.txt || echo "ET feed failed"
 
-        # Fetch from Spamhaus DROP
-        curl -s https://www.spamhaus.org/drop/drop.txt | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' >> spamhaus.txt
+          # Merge and deduplicate
+          cat *.txt | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort | uniq > ../bad_ips.csv
+          cd ..
 
-        # Fetch from Emerging Threats
-        curl -s https://rules.emergingthreats.net/blockrules/compromised-ips.txt >> et.txt
+      - name: Commit and push changes
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add bad_ips.csv
 
-        # Combine and deduplicate
-        cat *.txt | sort | uniq > ../bad_ips.csv
-
-        cd ..
-
-   - name: Commit and push changes
-      run: |
-        git config user.name "GitHub Action"
-        git config user.email "action@github.com"
-        git add bad_ips.csv
-
-        if ! git diff --cached --quiet; then
-          git commit -m "Daily update of bad IPs"
-          git push
-        else
-          echo "No changes in bad_ips.csv — skipping commit."
-        fi
+          if ! git diff --cached --quiet; then
+            git commit -m "Daily update of bad IPs"
+            git push
+          else
+            echo "No changes in bad_ips.csv — skipping commit."
+          fi
